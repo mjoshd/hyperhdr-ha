@@ -19,7 +19,6 @@ from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
 )
-from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_INSTANCE_CLIENTS,
@@ -104,12 +103,6 @@ async def async_create_connect_hyperhdr_client(
     return hyperhdr_client
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up HyperHDR component."""
-    hass.data[DOMAIN] = {}
-    return True
-
-
 @callback
 def listen_for_instance_updates(
     hass: HomeAssistant,
@@ -189,6 +182,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # We need 1 root client (to manage instances being removed/added) and then 1 client
     # per HyperHDR server instance which is shared for all entities associated with
     # that instance.
+    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         CONF_ROOT_CLIENT: hyperhdr_client,
         CONF_INSTANCE_CLIENTS: {},
@@ -269,21 +263,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         }
     )
 
-    async def setup_then_listen() -> None:
-        await asyncio.gather(
-            *(
-                hass.config_entries.async_forward_entry_setup(entry, platform)
-                for platform in PLATFORMS
-            )
-        )
-        assert hyperhdr_client
-        if hyperhdr_client.instances is not None:
-            await async_instances_to_clients_raw(hyperhdr_client.instances)
-        hass.data[DOMAIN][entry.entry_id][CONF_ON_UNLOAD].append(
-            entry.add_update_listener(_async_entry_updated)
-        )
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    assert hyperhdr_client
+    if hyperhdr_client.instances is not None:
+        await async_instances_to_clients_raw(hyperhdr_client.instances)
+    hass.data[DOMAIN][entry.entry_id][CONF_ON_UNLOAD].append(
+        entry.add_update_listener(_async_entry_updated)
+    )
 
-    hass.async_create_task(setup_then_listen())
     return True
 
 
