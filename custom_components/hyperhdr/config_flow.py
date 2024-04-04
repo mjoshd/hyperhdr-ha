@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Mapping
 from contextlib import suppress
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from hyperion import client, const
