@@ -1,4 +1,5 @@
-"""Support for HyperHDR remotes."""
+"""Support for Hyperion-NG remotes."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
@@ -7,7 +8,7 @@ import logging
 from types import MappingProxyType
 from typing import Any
 
-from hyperhdr import client, const
+from hyperion import client, const
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -28,8 +29,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 import homeassistant.util.color as color_util
 
 from . import (
-    get_hyperhdr_device_id,
-    get_hyperhdr_unique_id,
+    get_hyperion_device_id,
+    get_hyperion_unique_id,
     listen_for_instance_updates,
 )
 from .const import (
@@ -39,10 +40,10 @@ from .const import (
     DEFAULT_ORIGIN,
     DEFAULT_PRIORITY,
     DOMAIN,
-    HYPERHDR_MANUFACTURER_NAME,
-    HYPERHDR_MODEL_NAME,
+    HYPERION_MANUFACTURER_NAME,
+    HYPERION_MODEL_NAME,
     SIGNAL_ENTITY_REMOVE,
-    TYPE_HYPERHDR_LIGHT,
+    TYPE_HYPERION_LIGHT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,8 +53,8 @@ CONF_HDMI_PRIORITY = "hdmi_priority"
 CONF_EFFECT_LIST = "effect_list"
 
 # As we want to preserve brightness control for effects (e.g. to reduce the
-# brightness for VIDEOGRABBER), we need to persist the effect that is in flight, so
-# subsequent calls to turn_on will know the keep the effect enabled.
+# brightness), we need to persist the effect that is in flight, so
+# subsequent calls to turn_on will know to keep the effect enabled.
 # Unfortunately the Home Assistant UI does not easily expose a way to remove a
 # selected effect (there is no 'No Effect' option by default). Instead, we
 # create a new fake effect ("Solid") that is always selected by default for
@@ -63,7 +64,7 @@ KEY_EFFECT_SOLID = "Solid"
 DEFAULT_COLOR = [255, 255, 255]
 DEFAULT_BRIGHTNESS = 255
 DEFAULT_EFFECT = KEY_EFFECT_SOLID
-DEFAULT_NAME = "HyperHDR"
+DEFAULT_NAME = "Hyperion"
 DEFAULT_PORT = const.DEFAULT_PORT_JSON
 DEFAULT_HDMI_PRIORITY = 880
 DEFAULT_EFFECT_LIST: list[str] = []
@@ -77,14 +78,14 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up a HyperHDR platform from config entry."""
+    """Set up a Hyperion platform from config entry."""
 
     entry_data = hass.data[DOMAIN][config_entry.entry_id]
     server_id = config_entry.unique_id
 
     @callback
     def instance_add(instance_num: int, instance_name: str) -> None:
-        """Add entities for a new HyperHDR instance."""
+        """Add entities for a new Hyperion instance."""
         assert server_id
         args = (
             server_id,
@@ -95,26 +96,26 @@ async def async_setup_entry(
         )
         async_add_entities(
             [
-                HyperHDRLight(*args),
+                HyperionLight(*args),
             ]
         )
 
     @callback
     def instance_remove(instance_num: int) -> None:
-        """Remove entities for an old HyperHDR instance."""
+        """Remove entities for an old Hyperion instance."""
         assert server_id
         async_dispatcher_send(
             hass,
             SIGNAL_ENTITY_REMOVE.format(
-                get_hyperhdr_unique_id(server_id, instance_num, TYPE_HYPERHDR_LIGHT)
+                get_hyperion_unique_id(server_id, instance_num, TYPE_HYPERION_LIGHT)
             ),
         )
 
     listen_for_instance_updates(hass, config_entry, instance_add, instance_remove)
 
 
-class HyperHDRLight(LightEntity):
-    """A HyperHDR light that acts as a client for the configured priority."""
+class HyperionLight(LightEntity):
+    """A Hyperion light that acts as a client for the configured priority."""
 
     _attr_has_entity_name = True
     _attr_name = None
@@ -129,16 +130,16 @@ class HyperHDRLight(LightEntity):
         instance_num: int,
         instance_name: str,
         options: MappingProxyType[str, Any],
-        hyperhdr_client: client.HyperHDRClient,
+        hyperion_client: client.HyperionClient,
     ) -> None:
         """Initialize the light."""
         self._attr_unique_id = self._compute_unique_id(server_id, instance_num)
-        self._device_id = get_hyperhdr_device_id(server_id, instance_num)
+        self._device_id = get_hyperion_device_id(server_id, instance_num)
         self._instance_name = instance_name
         self._options = options
-        self._client = hyperhdr_client
+        self._client = hyperion_client
 
-        # Active state representing the HyperHDR instance.
+        # Active state representing the Hyperion instance.
         self._brightness: int = 255
         self._rgb_color: Sequence[int] = DEFAULT_COLOR
         self._effect: str = KEY_EFFECT_SOLID
@@ -155,15 +156,15 @@ class HyperHDRLight(LightEntity):
         }
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},
-            manufacturer=HYPERHDR_MANUFACTURER_NAME,
-            model=HYPERHDR_MODEL_NAME,
+            manufacturer=HYPERION_MANUFACTURER_NAME,
+            model=HYPERION_MODEL_NAME,
             name=self._instance_name,
             configuration_url=self._client.remote_url,
         )
 
     def _compute_unique_id(self, server_id: str, instance_num: int) -> str:
         """Compute a unique id for this instance."""
-        return get_hyperhdr_unique_id(server_id, instance_num, TYPE_HYPERHDR_LIGHT)
+        return get_hyperion_unique_id(server_id, instance_num, TYPE_HYPERION_LIGHT)
 
     @property
     def brightness(self) -> int:
@@ -255,15 +256,14 @@ class HyperHDRLight(LightEntity):
                 return
 
         # == Set a color
-        else:
-            if not await self._client.async_send_set_color(
-                **{
-                    const.KEY_PRIORITY: self._get_option(CONF_PRIORITY),
-                    const.KEY_COLOR: rgb_color,
-                    const.KEY_ORIGIN: DEFAULT_ORIGIN,
-                }
-            ):
-                return
+        elif not await self._client.async_send_set_color(
+            **{
+                const.KEY_PRIORITY: self._get_option(CONF_PRIORITY),
+                const.KEY_COLOR: rgb_color,
+                const.KEY_ORIGIN: DEFAULT_ORIGIN,
+            }
+        ):
+            return
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the light i.e. clear the configured priority."""
@@ -288,12 +288,12 @@ class HyperHDRLight(LightEntity):
 
     @callback
     def _update_components(self, _: dict[str, Any] | None = None) -> None:
-        """Update HyperHDR components."""
+        """Update Hyperion components."""
         self.async_write_ha_state()
 
     @callback
     def _update_adjustment(self, _: dict[str, Any] | None = None) -> None:
-        """Update HyperHDR adjustments."""
+        """Update Hyperion adjustments."""
         if self._client.adjustment:
             brightness_pct = self._client.adjustment[0].get(
                 const.KEY_BRIGHTNESS, DEFAULT_BRIGHTNESS
@@ -307,13 +307,13 @@ class HyperHDRLight(LightEntity):
 
     @callback
     def _update_priorities(self, _: dict[str, Any] | None = None) -> None:
-        """Update HyperHDR priorities."""
+        """Update Hyperion priorities."""
         priority = self._get_priority_entry_that_dictates_state()
         if priority:
             component_id = priority.get(const.KEY_COMPONENTID)
             if component_id == const.KEY_COMPONENTID_EFFECT:
                 # Owner is the effect name.
-                # See: https://docs.hyperhdr-project.org/en/json/ServerInfo.html#priorities
+                # See: https://docs.hyperion-project.org/en/json/ServerInfo.html#priorities
                 self._set_internal_state(
                     rgb_color=DEFAULT_COLOR, effect=priority[const.KEY_OWNER]
                 )
@@ -326,7 +326,7 @@ class HyperHDRLight(LightEntity):
 
     @callback
     def _update_effect_list(self, _: dict[str, Any] | None = None) -> None:
-        """Update HyperHDR effects."""
+        """Update Hyperion effects."""
         if not self._client.effects:
             return
         effect_list: list[str] = []
@@ -345,14 +345,16 @@ class HyperHDRLight(LightEntity):
 
     @callback
     def _update_full_state(self) -> None:
-        """Update full HyperHDR state."""
+        """Update full Hyperion state."""
         self._update_adjustment()
         self._update_priorities()
         self._update_effect_list()
 
         _LOGGER.debug(
-            "HyperHDR full state update: On=%s,Brightness=%i,Effect=%s "
-            "(%i effects total),Color=%s",
+            (
+                "Hyperion full state update: On=%s,Brightness=%i,Effect=%s "
+                "(%i effects total),Color=%s"
+            ),
             self.is_on,
             self._brightness,
             self._effect,
@@ -385,10 +387,9 @@ class HyperHDRLight(LightEntity):
         self._client.remove_callbacks(self._client_callbacks)
 
     def _get_priority_entry_that_dictates_state(self) -> dict[str, Any] | None:
-        """Get the relevant HyperHDR priority entry to consider."""
+        """Get the relevant Hyperion priority entry to consider."""
         # Return whether or not the HA priority is among the active priorities.
         for priority in self._client.priorities or []:
             if priority.get(const.KEY_PRIORITY) == self._get_option(CONF_PRIORITY):
                 return priority
-
         return None

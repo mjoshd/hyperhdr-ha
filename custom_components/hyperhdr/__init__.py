@@ -1,4 +1,5 @@
-"""The HyperHDR component."""
+"""The Hyperion component."""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,7 +9,7 @@ import logging
 from typing import Any, cast
 
 from awesomeversion import AwesomeVersion
-from hyperhdr import client, const as hyperhdr_const
+from hyperion import client, const as hyperion_const
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN, Platform
@@ -26,29 +27,29 @@ from .const import (
     CONF_ROOT_CLIENT,
     DEFAULT_NAME,
     DOMAIN,
-    HYPERHDR_RELEASES_URL,
-    HYPERHDR_VERSION_WARN_CUTOFF,
+    HYPERION_RELEASES_URL,
+    HYPERION_VERSION_WARN_CUTOFF,
     SIGNAL_INSTANCE_ADD,
     SIGNAL_INSTANCE_REMOVE,
 )
 
-PLATFORMS = [Platform.LIGHT, Platform.SWITCH]
+PLATFORMS = [Platform.CAMERA, Platform.LIGHT, Platform.SENSOR, Platform.SWITCH]
 
 _LOGGER = logging.getLogger(__name__)
 
 # Unique ID
 # =========
-# A config entry represents a connection to a single HyperHDR server. The config entry
-# unique_id is the server id returned from the HyperHDR instance (a unique ID per
+# A config entry represents a connection to a single Hyperion server. The config entry
+# unique_id is the server id returned from the Hyperion instance (a unique ID per
 # server).
 #
 # Each server connection may create multiple entities. The unique_id for each entity is
 # <server id>_<instance #>_<name>, where <server_id> will be the unique_id on the
 # relevant config entry (as above), <instance #> will be the server instance # and
 # <name> will be a unique identifying type name for each entity associated with this
-# server/instance (e.g. "hyperhdr_light").
+# server/instance (e.g. "hyperion_light").
 #
-# The get_hyperhdr_unique_id method will create a per-entity unique id when given the
+# The get_hyperion_unique_id method will create a per-entity unique id when given the
 # server id, an instance number and a name.
 
 # hass.data format
@@ -56,23 +57,23 @@ _LOGGER = logging.getLogger(__name__)
 #
 # hass.data[DOMAIN] = {
 #     <config_entry.entry_id>: {
-#         "ROOT_CLIENT": <HyperHDR Client>,
+#         "ROOT_CLIENT": <Hyperion Client>,
 #         "ON_UNLOAD": [<callable>, ...],
 #     }
 # }
 
 
-def get_hyperhdr_unique_id(server_id: str, instance: int, name: str) -> str:
-    """Get a unique_id for a HyperHDR instance."""
+def get_hyperion_unique_id(server_id: str, instance: int, name: str) -> str:
+    """Get a unique_id for a Hyperion instance."""
     return f"{server_id}_{instance}_{name}"
 
 
-def get_hyperhdr_device_id(server_id: str, instance: int) -> str:
-    """Get an id for a HyperHDR device/instance."""
+def get_hyperion_device_id(server_id: str, instance: int) -> str:
+    """Get an id for a Hyperion device/instance."""
     return f"{server_id}_{instance}"
 
 
-def split_hyperhdr_unique_id(unique_id: str) -> tuple[str, int, str] | None:
+def split_hyperion_unique_id(unique_id: str) -> tuple[str, int, str] | None:
     """Split a unique_id into a (server_id, instance, type) tuple."""
     data = tuple(unique_id.split("_", 2))
     if len(data) != 3:
@@ -83,24 +84,24 @@ def split_hyperhdr_unique_id(unique_id: str) -> tuple[str, int, str] | None:
         return None
 
 
-def create_hyperhdr_client(
+def create_hyperion_client(
     *args: Any,
     **kwargs: Any,
-) -> client.HyperHDRClient:
-    """Create a HyperHDR Client."""
-    return client.HyperHDRClient(*args, **kwargs)
+) -> client.HyperionClient:
+    """Create a Hyperion Client."""
+    return client.HyperionClient(*args, **kwargs)
 
 
-async def async_create_connect_hyperhdr_client(
+async def async_create_connect_hyperion_client(
     *args: Any,
     **kwargs: Any,
-) -> client.HyperHDRClient | None:
-    """Create and connect a HyperHDR Client."""
-    hyperhdr_client = create_hyperhdr_client(*args, **kwargs)
+) -> client.HyperionClient | None:
+    """Create and connect a Hyperion Client."""
+    hyperion_client = create_hyperion_client(*args, **kwargs)
 
-    if not await hyperhdr_client.async_client_connect():
+    if not await hyperion_client.async_client_connect():
         return None
-    return hyperhdr_client
+    return hyperion_client
 
 
 @callback
@@ -129,74 +130,76 @@ def listen_for_instance_updates(
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up HyperHDR from a config entry."""
+    """Set up Hyperion from a config entry."""
     host = entry.data[CONF_HOST]
     port = entry.data[CONF_PORT]
     token = entry.data.get(CONF_TOKEN)
 
-    hyperhdr_client = await async_create_connect_hyperhdr_client(
+    hyperion_client = await async_create_connect_hyperion_client(
         host, port, token=token, raw_connection=True
     )
 
     # Client won't connect? => Not ready.
-    if not hyperhdr_client:
+    if not hyperion_client:
         raise ConfigEntryNotReady
-    version = await hyperhdr_client.async_sysinfo_version()
+    version = await hyperion_client.async_sysinfo_version()
     if version is not None:
         with suppress(ValueError):
-            if AwesomeVersion(version) < AwesomeVersion(HYPERHDR_VERSION_WARN_CUTOFF):
+            if AwesomeVersion(version) < AwesomeVersion(HYPERION_VERSION_WARN_CUTOFF):
                 _LOGGER.warning(
-                    "Using a HyperHDR server version < %s is not recommended -- "
-                    "some features may be unavailable or may not function correctly. "
-                    "Please consider upgrading: %s",
-                    HYPERHDR_VERSION_WARN_CUTOFF,
-                    HYPERHDR_RELEASES_URL,
+                    (
+                        "Using a Hyperion server version < %s is not recommended --"
+                        " some features may be unavailable or may not function"
+                        " correctly. Please consider upgrading: %s"
+                    ),
+                    HYPERION_VERSION_WARN_CUTOFF,
+                    HYPERION_RELEASES_URL,
                 )
 
     # Client needs authentication, but no token provided? => Reauth.
-    auth_resp = await hyperhdr_client.async_is_auth_required()
+    auth_resp = await hyperion_client.async_is_auth_required()
     if (
         auth_resp is not None
         and client.ResponseOK(auth_resp)
-        and auth_resp.get(hyperhdr_const.KEY_INFO, {}).get(
-            hyperhdr_const.KEY_REQUIRED, False
+        and auth_resp.get(hyperion_const.KEY_INFO, {}).get(
+            hyperion_const.KEY_REQUIRED, False
         )
         and token is None
     ):
-        await hyperhdr_client.async_client_disconnect()
+        await hyperion_client.async_client_disconnect()
         raise ConfigEntryAuthFailed
 
     # Client login doesn't work? => Reauth.
-    if not await hyperhdr_client.async_client_login():
-        await hyperhdr_client.async_client_disconnect()
+    if not await hyperion_client.async_client_login():
+        await hyperion_client.async_client_disconnect()
         raise ConfigEntryAuthFailed
 
     # Cannot switch instance or cannot load state? => Not ready.
     if (
-        not await hyperhdr_client.async_client_switch_instance()
-        or not client.ServerInfoResponseOK(await hyperhdr_client.async_get_serverinfo())
+        not await hyperion_client.async_client_switch_instance()
+        or not client.ServerInfoResponseOK(await hyperion_client.async_get_serverinfo())
     ):
-        await hyperhdr_client.async_client_disconnect()
+        await hyperion_client.async_client_disconnect()
         raise ConfigEntryNotReady
 
     # We need 1 root client (to manage instances being removed/added) and then 1 client
-    # per HyperHDR server instance which is shared for all entities associated with
+    # per Hyperion server instance which is shared for all entities associated with
     # that instance.
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
-        CONF_ROOT_CLIENT: hyperhdr_client,
+        CONF_ROOT_CLIENT: hyperion_client,
         CONF_INSTANCE_CLIENTS: {},
         CONF_ON_UNLOAD: [],
     }
 
     async def async_instances_to_clients(response: dict[str, Any]) -> None:
-        """Convert instances to HyperHDR clients."""
-        if not response or hyperhdr_const.KEY_DATA not in response:
+        """Convert instances to Hyperion clients."""
+        if not response or hyperion_const.KEY_DATA not in response:
             return
-        await async_instances_to_clients_raw(response[hyperhdr_const.KEY_DATA])
+        await async_instances_to_clients_raw(response[hyperion_const.KEY_DATA])
 
     async def async_instances_to_clients_raw(instances: list[dict[str, Any]]) -> None:
-        """Convert instances to HyperHDR clients."""
+        """Convert instances to Hyperion clients."""
         device_registry = dr.async_get(hass)
         running_instances: set[int] = set()
         stopped_instances: set[int] = set()
@@ -212,22 +215,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Add instances that are missing.
         for instance in instances:
-            instance_num = instance.get(hyperhdr_const.KEY_INSTANCE)
+            instance_num = instance.get(hyperion_const.KEY_INSTANCE)
             if instance_num is None:
                 continue
-            if not instance.get(hyperhdr_const.KEY_RUNNING, False):
+            if not instance.get(hyperion_const.KEY_RUNNING, False):
                 stopped_instances.add(instance_num)
                 continue
             running_instances.add(instance_num)
             if instance_num in existing_instances:
                 continue
-            hyperhdr_client = await async_create_connect_hyperhdr_client(
+            hyperion_client = await async_create_connect_hyperion_client(
                 host, port, instance=instance_num, token=token
             )
-            if not hyperhdr_client:
+            if not hyperion_client:
                 continue
-            existing_instances[instance_num] = hyperhdr_client
-            instance_name = instance.get(hyperhdr_const.KEY_FRIENDLY_NAME, DEFAULT_NAME)
+            existing_instances[instance_num] = hyperion_client
+            instance_name = instance.get(hyperion_const.KEY_FRIENDLY_NAME, DEFAULT_NAME)
             async_dispatcher_send(
                 hass,
                 SIGNAL_INSTANCE_ADD.format(entry.entry_id),
@@ -235,7 +238,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 instance_name,
             )
 
-        # Remove entities that are are not running instances on HyperHDR.
+        # Remove entities that are not running instances on Hyperion.
         for instance_num in set(existing_instances) - running_instances:
             del existing_instances[instance_num]
             async_dispatcher_send(
@@ -245,28 +248,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Ensure every device associated with this config entry is still in the list of
         # motionEye cameras, otherwise remove the device (and thus entities).
         known_devices = {
-            get_hyperhdr_device_id(server_id, instance_num)
+            get_hyperion_device_id(server_id, instance_num)
             for instance_num in running_instances | stopped_instances
         }
         for device_entry in dr.async_entries_for_config_entry(
             device_registry, entry.entry_id
         ):
-            for (kind, key) in device_entry.identifiers:
+            for kind, key in device_entry.identifiers:
                 if kind == DOMAIN and key in known_devices:
                     break
             else:
                 device_registry.async_remove_device(device_entry.id)
 
-    hyperhdr_client.set_callbacks(
+    hyperion_client.set_callbacks(
         {
-            f"{hyperhdr_const.KEY_INSTANCE}-{hyperhdr_const.KEY_UPDATE}": async_instances_to_clients,
+            f"{hyperion_const.KEY_INSTANCE}-{hyperion_const.KEY_UPDATE}": async_instances_to_clients,
         }
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    assert hyperhdr_client
-    if hyperhdr_client.instances is not None:
-        await async_instances_to_clients_raw(hyperhdr_client.instances)
+    assert hyperion_client
+    if hyperion_client.instances is not None:
+        await async_instances_to_clients_raw(hyperion_client.instances)
     hass.data[DOMAIN][entry.entry_id][CONF_ON_UNLOAD].append(
         entry.add_update_listener(_async_entry_updated)
     )

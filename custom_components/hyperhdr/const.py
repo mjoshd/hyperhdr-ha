@@ -1,4 +1,4 @@
-"""Constants for HyperHDR integration."""
+"""Constants for Hyperion integration."""
 
 CONF_AUTH_ID = "auth_id"
 CONF_CREATE_TOKEN = "create_token"
@@ -16,15 +16,24 @@ DEFAULT_PRIORITY = 128
 
 DOMAIN = "hyperhdr"
 
-HYPERHDR_MANUFACTURER_NAME = "HyperHDR"
-HYPERHDR_MODEL_NAME = f"{HYPERHDR_MANUFACTURER_NAME}"
-HYPERHDR_RELEASES_URL = "https://github.com/awawa-dev/HyperHDR/releases"
-HYPERHDR_VERSION_WARN_CUTOFF = "17.0.0.0"
+HYPERION_MANUFACTURER_NAME = "HyperHDR"
+HYPERION_MODEL_NAME = f"{HYPERION_MANUFACTURER_NAME}"
+HYPERION_RELEASES_URL = "https://github.com/awawa-dev/HyperHDR/releases"
+HYPERION_VERSION_WARN_CUTOFF = "20.0.0.0"
 
-SIGNAL_INSTANCE_ADD = f"{DOMAIN}_instance_add_signal." "{}"
-SIGNAL_INSTANCE_REMOVE = f"{DOMAIN}_instance_remove_signal." "{}"
-SIGNAL_ENTITY_REMOVE = f"{DOMAIN}_entity_remove_signal." "{}"
+SIGNAL_INSTANCE_ADD = f"{DOMAIN}_instance_add_signal.{{}}"
+SIGNAL_INSTANCE_REMOVE = f"{DOMAIN}_instance_remove_signal.{{}}"
+SIGNAL_ENTITY_REMOVE = f"{DOMAIN}_entity_remove_signal.{{}}"
 
-TYPE_HYPERHDR_CAMERA = "hyperhdr_camera"
-TYPE_HYPERHDR_LIGHT = "hyperhdr_light"
-TYPE_HYPERHDR_COMPONENT_SWITCH_BASE = "hyperhdr_component_switch"
+NAME_SUFFIX_HYPERION_LIGHT = ""
+NAME_SUFFIX_HYPERION_PRIORITY_LIGHT = "Priority"
+NAME_SUFFIX_HYPERION_COMPONENT_SWITCH = "Component"
+NAME_SUFFIX_HYPERION_CAMERA = ""
+
+TYPE_HYPERION_CAMERA = "hyperhdr_camera"
+TYPE_HYPERION_LIGHT = "hyperhdr_light"
+TYPE_HYPERION_PRIORITY_LIGHT = "hyperhdr_priority_light"
+TYPE_HYPERION_COMPONENT_SWITCH_BASE = "hyperhdr_component_switch"
+
+TYPE_HYPERION_SENSOR_BASE = "hyperhdr_sensor"
+TYPE_HYPERION_SENSOR_VISIBLE_PRIORITY = "visible_priority"
