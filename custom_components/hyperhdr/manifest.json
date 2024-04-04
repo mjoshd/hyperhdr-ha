@@ -7,7 +7,7 @@
   "issue_tracker": "https://github.com/andrew-kennedy/hyperhdr-ha/issues",
   "loggers": ["hyperhdr"],
   "name": "HyperHDR",
-  "requirements": ["git+https://github.com/andrew-kennedy/hyperion-py.git"],
+  "requirements": ["hyperhdr-py-redux"],
   "ssdp": [
     {
       "manufacturer": "HyperHDR Open Source Ambient Lighting",
