@@ -1,17 +1,18 @@
 {
-  "domain": "hyperion",
-  "name": "Hyperion",
-  "codeowners": ["@dermotduffy"],
+  "codeowners": ["@andrew-kennedy"],
   "config_flow": true,
   "documentation": "https://www.home-assistant.io/integrations/hyperion",
+  "domain": "hyperhdr",
   "iot_class": "local_push",
-  "loggers": ["hyperion"],
-  "quality_scale": "platinum",
+  "issue_tracker": "https://github.com/andrew-kennedy/hyperhdr-ha/issues",
+  "loggers": ["hyperhdr"],
+  "name": "HyperHDR",
   "requirements": ["hyperion-py @ git+https://github.com/andrew-kennedy/hyperion-py@main"],
   "ssdp": [
     {
-      "manufacturer": "Hyperion Open Source Ambient Lighting",
-      "st": "urn:hyperion-project.org:device:basic:1"
+      "manufacturer": "HyperHDR Open Source Ambient Lighting",
+      "st": "urn:github.com/awawa-dev/HyperHDR:device:basic:1"
     }
-  ]
+  ],
+  "version": "0.0.7"
 }
