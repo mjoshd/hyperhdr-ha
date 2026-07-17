@@ -12,7 +12,8 @@
         },
         "error": {
             "cannot_connect": "Failed to connect",
-            "invalid_access_token": "Invalid access token"
+            "invalid_access_token": "Invalid access token",
+            "ports_must_differ": "JSON API port and WebSocket port must be different"
         },
         "step": {
             "auth": {
@@ -47,7 +48,8 @@
         "error": {
             "cannot_connect": "Failed to connect",
             "no_id": "The HyperHDR Ambilight instance did not report its id",
-            "wrong_device": "This address is a different HyperHDR server. Remove this entry and add the new one instead."
+            "wrong_device": "This address is a different HyperHDR server. Remove this entry and add the new one instead.",
+            "ports_must_differ": "JSON API port and WebSocket port must be different"
         },
         "step": {
             "init": {

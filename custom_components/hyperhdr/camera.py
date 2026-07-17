@@ -6,6 +6,7 @@ import asyncio
 import functools
 import logging
 import time
+from typing import Any
 
 from aiohttp import web
 from hyperhdr.stream import (
@@ -55,12 +56,28 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up a HyperHDR platform from config entry."""
+    from homeassistant.const import CONF_PORT
+
     entry_data = hass.data[DOMAIN][config_entry.entry_id]
     server_id = config_entry.unique_id
     host = config_entry.data[CONF_HOST]
+    port = config_entry.data.get(CONF_PORT, 19444)
     port_ws = config_entry.data.get(CONF_PORT_WS, 8090)
     token = config_entry.data.get(CONF_TOKEN)
     admin_password = config_entry.data.get(CONF_ADMIN_PASSWORD)
+
+    # Safety check: if port_ws equals port (JSON API port), skip camera setup
+    # to prevent HTTP headers being sent to the raw JSON TCP socket
+    if port == port_ws:
+        _LOGGER.warning(
+            "WebSocket port (%s) equals JSON API port (%s) for HyperHDR at %s. "
+            "Camera entities will not be created. Please reconfigure the "
+            "integration with the correct WebSocket port (typically 8090)",
+            port_ws,
+            port,
+            host,
+        )
+        return
 
     def led_camera_unique_id(instance_num: int) -> str:
         """Return the led camera unique_id."""
