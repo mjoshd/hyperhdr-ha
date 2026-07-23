@@ -81,6 +81,7 @@ After the integration is set up, you can adjust settings via the **Options** gea
 |--------|-------------|---------|
 | Priority | Default priority level for light commands (0–255). | `128` |
 | Clear priority when main light turns off | Sends HyperHDR's `clear` command at the configured priority when the main light is turned off, so sources like USB grabber can take over again. | `false` |
+| Keep WLED in realtime mode when off (idle black) | When enabled, turning off the main light keeps the LED device enabled and sends a black output instead of disabling the LED device. This prevents WLED from resuming stored presets when the light is "off". Useful for WLED backends where disabling the LED device releases WLED from realtime mode. | `false` |
 | Effect Show List | Select which HyperHDR effects to expose in Home Assistant. New effects added to HyperHDR will appear by default. | All effects shown |
 | WebSocket Port | Port for LED camera streams. | `8090` |
 | Admin Password | Password for LED stream authentication (required if Local API Authentication is enabled in HyperHDR). | (empty) |
