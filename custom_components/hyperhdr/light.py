@@ -36,8 +36,10 @@ from .const import (
     CONF_CLEAR_PRIORITY_ON_TURN_OFF,
     CONF_EFFECT_HIDE_LIST,
     CONF_INSTANCE_CLIENTS,
+    CONF_KEEP_REALTIME_ON_TURN_OFF,
     CONF_PRIORITY,
     DEFAULT_CLEAR_PRIORITY_ON_TURN_OFF,
+    DEFAULT_KEEP_REALTIME_ON_TURN_OFF,
     DEFAULT_ORIGIN,
     DEFAULT_PRIORITY,
     DOMAIN,
@@ -250,6 +252,7 @@ class HyperHDRBaseLight(LightEntity):
         defaults = {
             CONF_PRIORITY: DEFAULT_PRIORITY,
             CONF_CLEAR_PRIORITY_ON_TURN_OFF: DEFAULT_CLEAR_PRIORITY_ON_TURN_OFF,
+            CONF_KEEP_REALTIME_ON_TURN_OFF: DEFAULT_KEEP_REALTIME_ON_TURN_OFF,
             CONF_EFFECT_HIDE_LIST: [],
         }
         return self._options.get(key, defaults[key])
@@ -601,6 +604,12 @@ class HyperHDRLight(HyperHDRBaseLight):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light."""
+        # == Clear idle-black priority if set ==
+        # If keep_realtime_on_turn_off was used, clear the -1 priority to restore
+        # normal priority handling.
+        if self._get_option(CONF_KEEP_REALTIME_ON_TURN_OFF):
+            await self._client.async_send_clear(**{const.KEY_PRIORITY: -1})
+
         # == Turn device on ==
         # Turn on both ALL (HyperHDR itself) and LEDDEVICE. It would be
         # preferable to enable LEDDEVICE after the settings (e.g. brightness,
@@ -636,15 +645,26 @@ class HyperHDRLight(HyperHDRBaseLight):
         if self._get_option(CONF_CLEAR_PRIORITY_ON_TURN_OFF):
             if not await self._async_clear_configured_priority():
                 return
-        if not await self._client.async_send_set_component(
-            **{
-                const.KEY_COMPONENTSTATE: {
-                    const.KEY_COMPONENT: const.KEY_COMPONENTID_LEDDEVICE,
-                    const.KEY_STATE: False,
+
+        if self._get_option(CONF_KEEP_REALTIME_ON_TURN_OFF):
+            # Keep LED device enabled (WLED stays in realtime mode) but clear all
+            # priorities to black out the output. Priority -1 is the highest priority
+            # and will override all other sources.
+            if not await self._client.async_send_clear(
+                **{const.KEY_PRIORITY: -1}
+            ):
+                return
+        else:
+            # Default behavior: disable LED device (releases WLED from realtime mode)
+            if not await self._client.async_send_set_component(
+                **{
+                    const.KEY_COMPONENTSTATE: {
+                        const.KEY_COMPONENT: const.KEY_COMPONENTID_LEDDEVICE,
+                        const.KEY_STATE: False,
+                    }
                 }
-            }
-        ):
-            return
+            ):
+                return
 
 
 class HyperHDRPriorityLight(HyperHDRBaseLight):

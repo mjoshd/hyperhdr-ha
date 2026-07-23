@@ -39,9 +39,11 @@ from .const import (
     CONF_CREATE_TOKEN,
     CONF_EFFECT_HIDE_LIST,
     CONF_EFFECT_SHOW_LIST,
+    CONF_KEEP_REALTIME_ON_TURN_OFF,
     CONF_PORT_WS,
     CONF_PRIORITY,
     DEFAULT_CLEAR_PRIORITY_ON_TURN_OFF,
+    DEFAULT_KEEP_REALTIME_ON_TURN_OFF,
     DEFAULT_ORIGIN,
     DEFAULT_PORT_WS,
     DEFAULT_PRIORITY,
@@ -546,6 +548,13 @@ class HyperHDROptionsFlow(OptionsFlow):
                     DEFAULT_CLEAR_PRIORITY_ON_TURN_OFF,
                 ),
             )
+            keep_realtime_default = user_input.get(
+                CONF_KEEP_REALTIME_ON_TURN_OFF,
+                options.get(
+                    CONF_KEEP_REALTIME_ON_TURN_OFF,
+                    DEFAULT_KEEP_REALTIME_ON_TURN_OFF,
+                ),
+            )
             effect_show_default = user_input.get(
                 CONF_EFFECT_SHOW_LIST, default_effect_show_list
             )
@@ -562,6 +571,10 @@ class HyperHDROptionsFlow(OptionsFlow):
             clear_priority_default = options.get(
                 CONF_CLEAR_PRIORITY_ON_TURN_OFF,
                 DEFAULT_CLEAR_PRIORITY_ON_TURN_OFF,
+            )
+            keep_realtime_default = options.get(
+                CONF_KEEP_REALTIME_ON_TURN_OFF,
+                DEFAULT_KEEP_REALTIME_ON_TURN_OFF,
             )
             effect_show_default = default_effect_show_list
             port_ws_default = data.get(CONF_PORT_WS, DEFAULT_PORT_WS)
@@ -583,6 +596,10 @@ class HyperHDROptionsFlow(OptionsFlow):
                     vol.Optional(
                         CONF_CLEAR_PRIORITY_ON_TURN_OFF,
                         default=clear_priority_default,
+                    ): bool,
+                    vol.Optional(
+                        CONF_KEEP_REALTIME_ON_TURN_OFF,
+                        default=keep_realtime_default,
                     ): bool,
                     vol.Optional(
                         CONF_EFFECT_SHOW_LIST,
