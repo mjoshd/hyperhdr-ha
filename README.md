@@ -83,6 +83,7 @@ After the integration is set up, you can adjust the following via **Options** (g
 |--------|-------------|
 | **Priority** | Default priority level for light commands (0–255). |
 | **Clear priority when main light turns off** | When enabled, turning off the main HyperHDR Light sends HyperHDR's `clear` command at the configured priority so USB grabber and other lower-priority sources can take over again. Disabled by default; use the **Clear Priority** button or enable this option if you want automatic clearing. |
+| **Keep WLED in realtime mode when off (idle black)** | When enabled, turning off the main light keeps the LED device enabled and sends a black output instead of disabling the LED device. This prevents WLED from resuming stored presets when the light is "off". Useful for WLED backends where disabling the LED device releases WLED from realtime mode. Disabled by default. |
 | **Effect Show List** | Select which effects to expose in Home Assistant. |
 | **WebSocket Port** | Port for LED camera streams (default `8090`). |
 | **Admin Password** | Password for LED stream authentication. |

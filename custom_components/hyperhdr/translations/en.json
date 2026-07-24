@@ -57,6 +57,7 @@
                     "port": "JSON API Port",
                     "priority": "HyperHDR priority to use for colors and effects",
                     "clear_priority_on_turn_off": "Clear priority when main light turns off",
+                    "keep_realtime_on_turn_off": "Keep WLED in realtime mode when off (idle black)",
                     "port_ws": "WebSocket Port (for LED streaming)",
                     "admin_password": "Admin Password (for LED stream authentication)"
                 }
