@@ -41,6 +41,8 @@ from .const import (
     TYPE_HYPERHDR_NUMBER_SMOOTHING_UPDATE_FREQ,
     TYPE_HYPERHDR_SELECT_BASE,
     TYPE_HYPERHDR_SELECT_SMOOTHING_TYPE,
+    TYPE_HYPERHDR_SENSOR_AVERAGE_COLOR,
+    TYPE_HYPERHDR_SENSOR_BASE,
 )
 
 ### HyperHDR v0.0.8
@@ -206,6 +208,10 @@ _SMOOTHING_SUFFIXES = (
     f"{TYPE_HYPERHDR_SELECT_BASE}_{TYPE_HYPERHDR_SELECT_SMOOTHING_TYPE}",
 )
 
+_AVERAGE_COLOR_UNIQUE_SUFFIX = (
+    f"{TYPE_HYPERHDR_SENSOR_BASE}_{TYPE_HYPERHDR_SENSOR_AVERAGE_COLOR}"
+)
+
 
 def _async_cleanup_stale_entities(
     hass: HomeAssistant, entry: ConfigEntry
@@ -241,6 +247,47 @@ def _async_cleanup_stale_entities(
                         uid,
                     )
                     ent_reg.async_remove(entity_entry.entity_id)
+
+
+def _async_fix_average_color_entity_ids(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> None:
+    """Rename Average Color sensors that were registered with a ``_none`` entity_id.
+
+    When only ``translation_key`` is set, some Home Assistant versions slug the
+    entity as ``_none`` before translations load. Existing installs keep that
+    bad entity_id until we rename it here.
+    """
+    ent_reg = er.async_get(hass)
+
+    for entity_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        uid = entity_entry.unique_id
+        if not uid.endswith(f"_{_AVERAGE_COLOR_UNIQUE_SUFFIX}"):
+            continue
+        if not entity_entry.entity_id.endswith("_none"):
+            continue
+
+        old_entity_id = entity_entry.entity_id
+        new_entity_id = f"{old_entity_id.rsplit('_none', 1)[0]}_average_color"
+        if old_entity_id == new_entity_id:
+            continue
+
+        if ent_reg.async_get(new_entity_id) is not None:
+            _LOGGER.debug(
+                "Removing duplicate Average Color entity %s (%s); %s already exists",
+                old_entity_id,
+                uid,
+                new_entity_id,
+            )
+            ent_reg.async_remove(old_entity_id)
+            continue
+
+        _LOGGER.info(
+            "Renaming Average Color entity %s to %s",
+            old_entity_id,
+            new_entity_id,
+        )
+        ent_reg.async_update_entity(old_entity_id, new_entity_id=new_entity_id)
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -415,6 +462,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Prune stale entity-registry entries left from removed features.
     _async_cleanup_stale_entities(hass, entry)
+    _async_fix_average_color_entity_ids(hass, entry)
 
     hass.data[DOMAIN][entry.entry_id][CONF_ON_UNLOAD].append(
         entry.add_update_listener(_async_entry_updated)

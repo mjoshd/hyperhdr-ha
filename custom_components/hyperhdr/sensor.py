@@ -380,6 +380,7 @@ class HyperHDRVisiblePrioritySensor(HyperHDRSensor):
 
 AVERAGE_SENSOR_DESCRIPTION = SensorEntityDescription(
     key="average_color",
+    name="Average Color",
     translation_key="average_color",
     icon="mdi:palette",
     native_unit_of_measurement=None,

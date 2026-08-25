@@ -31,9 +31,10 @@ HyperHDR instances are automatically discovered via **SSDP**. When found, a noti
 <!-- {% if installed %} -->
 # Integration v1.0.1
 
-Fixes HyperHDR 22 JSON validation noise and LED stream auth issues ([#110](https://github.com/Shaffer-Softworks/hyperhdr-ha/issues/110)).
+Fixes HyperHDR JSON validation noise and LED stream auth issues ([#110](https://github.com/Shaffer-Softworks/hyperhdr-ha/issues/110)).
 
 - **Average Color:** uses HyperHDR-valid `current-state` / `average-color` (via `hyperhdr-py-sickkick==0.2.2`); parses `{red, green, blue}`; works with cameras disabled
+- **Average Color entity:** renames legacy `*_none` entity IDs to `*_average_color` on load
 - **LED cameras:** lazy-start WebSockets on first view; no reconnect spam after permanent auth failure
 - **Admin password:** must be at least 8 characters; clearing Options removes a stored password
 - **Dependency:** `hyperhdr-py-sickkick` `0.2.1` → `0.2.2`
