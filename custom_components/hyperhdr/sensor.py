@@ -54,13 +54,13 @@ _LOGGER = logging.getLogger(__name__)
 SENSORS = [TYPE_HYPERHDR_SENSOR_VISIBLE_PRIORITY, TYPE_HYPERHDR_SENSOR_AVERAGE_COLOR]
 
 
-def _try_average_rgb_from_ledcolors_response(
+def _try_average_rgb_from_response(
     resp: dict[str, Any] | None,
 ) -> tuple[list[int], dict[str, Any]] | None:
-    """Parse RGB from ``ledcolors`` / ``currentColors`` JSON-RPC success payload.
+    """Parse RGB from ``current-state`` / ``average-color`` success payload.
 
-    HyperHDR.ng validates ``command`` against a fixed enum and no longer accepts
-    ``calculate-colors``; average color is derived from per-LED values here.
+    HyperHDR returns ``info`` as ``{red, green, blue}``. Also accepts legacy
+    ``rgb`` arrays if present.
     """
     if not resp or not isinstance(resp, dict) or not resp.get("success"):
         return None
@@ -73,6 +73,13 @@ def _try_average_rgb_from_ledcolors_response(
         if key in info:
             attrs[key] = info[key]
 
+    # Primary HyperHDR shape from HyperHdrInstance::getAverageColor().
+    red = info.get("red")
+    green = info.get("green")
+    blue = info.get("blue")
+    if red is not None and green is not None and blue is not None:
+        return ([int(red), int(green), int(blue)], attrs)
+
     rgb = info.get("rgb") or info.get(KEY_RGB)
     if isinstance(rgb, (list, tuple)) and len(rgb) >= 3:
         return (
@@ -82,6 +89,12 @@ def _try_average_rgb_from_ledcolors_response(
 
     nested = info.get("avgColor") or info.get("averageColor")
     if isinstance(nested, dict):
+        red = nested.get("red", nested.get("r"))
+        green = nested.get("green", nested.get("g"))
+        blue = nested.get("blue", nested.get("b"))
+        if red is not None and green is not None and blue is not None:
+            attrs["avgColor"] = nested
+            return ([int(red), int(green), int(blue)], attrs)
         rgb = nested.get("rgb") or nested.get(KEY_RGB)
         if isinstance(rgb, (list, tuple)) and len(rgb) >= 3:
             attrs["avgColor"] = nested
@@ -90,35 +103,8 @@ def _try_average_rgb_from_ledcolors_response(
                 attrs,
             )
 
-    colors = info.get("colors")
-    if not isinstance(colors, list) or not colors:
-        return None
+    return None
 
-    total = [0, 0, 0]
-    count = 0
-    for entry in colors:
-        if isinstance(entry, (list, tuple)) and len(entry) >= 3:
-            total[0] += int(entry[0])
-            total[1] += int(entry[1])
-            total[2] += int(entry[2])
-            count += 1
-        elif isinstance(entry, dict):
-            r = entry.get("red", entry.get("r"))
-            g = entry.get("green", entry.get("g"))
-            b = entry.get("blue", entry.get("b"))
-            if r is not None and g is not None and b is not None:
-                total[0] += int(r)
-                total[1] += int(g)
-                total[2] += int(b)
-                count += 1
-    if not count:
-        return None
-
-    attrs["led_count"] = count
-    return (
-        [total[0] // count, total[1] // count, total[2] // count],
-        attrs,
-    )
 PRIORITY_SENSOR_DESCRIPTION = SensorEntityDescription(
     key="visible_priority",
     translation_key="visible_priority",
@@ -406,13 +392,10 @@ class HyperHDRAverageColorSensor(HyperHDRSensor):
     Data sources (in priority order):
     1. LED gradient stream — real-time average computed from raw LED data
        dispatched by HyperHDRLedGradientCamera (requires the gradient camera
-       entity to be enabled).
-    2. ``async_get_current_colors()`` — ``ledcolors`` / ``currentColors`` RPC;
-       used on HyperHDR.ng (and v20+) where ``calculate-colors`` is not a valid
-       top-level ``command``.
-    3. ``async_get_average_color()`` — legacy ``calculate-colors`` RPC, only if
-       the client has no ``async_get_current_colors`` (very old library).
-    4. Visible priority COLOR component — extracted from the priorities list
+       entity to be enabled and streaming).
+    2. ``async_get_average_color()`` — ``current-state`` / ``average-color`` RPC
+       (HyperHDR v20+ / HyperHDR.ng; requires hyperhdr-py-sickkick >= 0.2.2).
+    3. Visible priority COLOR component — extracted from the priorities list
        when a static color is the active source.
     """
 
@@ -442,17 +425,14 @@ class HyperHDRAverageColorSensor(HyperHDRSensor):
         self._device_id = get_hyperhdr_device_id(server_id, instance_num)
 
         # Always subscribe to priorities-update so the callback fires whenever
-        # the active source changes.  The old code tried to subscribe to
-        # "calculate-colors-update" which is a one-shot command response, not a
-        # push subscription, so it never triggered.
+        # the active source changes.
         self._client_callbacks = {
             f"{KEY_PRIORITIES}-{KEY_UPDATE}": self._update_from_priorities,
         }
 
-        # Track whether the server supports legacy calculate-colors (pre–HyperHDR.ng).
-        self._server_supports_calc: bool | None = None
-        # When False, skip ledcolors/currentColors (unsupported or repeated failure).
-        self._ledcolors_usable: bool | None = None
+        # When False, skip current-state/average-color (unsupported or failure).
+        self._average_color_rpc_usable: bool | None = None
+        self._average_update_task: asyncio.Task[None] | None = None
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks and populate initial state."""
@@ -501,8 +481,12 @@ class HyperHDRAverageColorSensor(HyperHDRSensor):
         whatever we set here on the next frame, so this mainly covers the case
         where the gradient camera is disabled or the LED stream is not running.
         """
-        # Schedule the async helper so we can try async_get_average_color.
-        self.hass.async_create_task(self._async_update_average())
+        # Coalesce concurrent updates — priorities can fire rapidly.
+        if self._average_update_task and not self._average_update_task.done():
+            return
+        self._average_update_task = self.hass.async_create_task(
+            self._async_update_average()
+        )
 
     async def _async_update_average(self) -> None:
         """Attempt to determine the average color from available sources."""
@@ -510,58 +494,30 @@ class HyperHDRAverageColorSensor(HyperHDRSensor):
         attrs: dict[str, Any] = {}
         source = "unknown"
 
-        # 1) ledcolors / currentColors (HyperHDR.ng schema; replaces calculate-colors).
-        if (
-            self._ledcolors_usable is not False
-            and hasattr(self._client, "async_get_current_colors")
-        ):
-            try:
-                resp = await self._client.async_get_current_colors()
-                parsed = _try_average_rgb_from_ledcolors_response(
-                    resp if isinstance(resp, dict) else None
-                )
-                if parsed is not None:
-                    avg_value, led_attrs = parsed
-                    attrs.update(led_attrs)
-                    source = "ledcolors"
-                    self._ledcolors_usable = True
-                elif isinstance(resp, dict) and resp.get("success") is False:
-                    self._ledcolors_usable = False
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.debug(
-                    "async_get_current_colors failed for average color sensor",
-                    exc_info=True,
-                )
-                self._ledcolors_usable = False
-
-        # 2) Legacy calculate-colors (older HyperHDR only — not in hyperhdr.ng enum).
-        if (
-            avg_value is None
-            and self._server_supports_calc is not False
-            and not hasattr(self._client, "async_get_current_colors")
-            and hasattr(self._client, "async_get_average_color")
+        # 1) current-state / average-color (HyperHDR.ng schema).
+        if self._average_color_rpc_usable is not False and hasattr(
+            self._client, "async_get_average_color"
         ):
             try:
                 resp = await self._client.async_get_average_color()
-                if resp and isinstance(resp, dict) and resp.get("success"):
-                    info = resp.get("info", {})
-                    rgb = info.get("rgb") or info.get(KEY_RGB)
-                    if isinstance(rgb, (list, tuple)) and len(rgb) >= 3:
-                        avg_value = [int(rgb[0]), int(rgb[1]), int(rgb[2])]
-                        attrs.update(info)
-                        source = "calculate-colors"
-                        self._server_supports_calc = True
-                    else:
-                        self._server_supports_calc = False
-                else:
-                    self._server_supports_calc = False
+                parsed = _try_average_rgb_from_response(
+                    resp if isinstance(resp, dict) else None
+                )
+                if parsed is not None:
+                    avg_value, rpc_attrs = parsed
+                    attrs.update(rpc_attrs)
+                    source = "average-color"
+                    self._average_color_rpc_usable = True
+                elif isinstance(resp, dict) and resp.get("success") is False:
+                    self._average_color_rpc_usable = False
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.debug(
-                    "async_get_average_color not supported on this server"
+                    "async_get_average_color failed for average color sensor",
+                    exc_info=True,
                 )
-                self._server_supports_calc = False
+                self._average_color_rpc_usable = False
 
-        # 3) Fall back to visible priorities with a COLOR component.
+        # 2) Fall back to visible priorities with a COLOR component.
         if avg_value is None:
             for priority in self._client.priorities or []:
                 if not (KEY_VISIBLE in priority and priority[KEY_VISIBLE] is True):
@@ -594,6 +550,7 @@ class HyperHDRAverageColorSensor(HyperHDRSensor):
         self._attr_native_value = hex_value if hex_value else None
         self._attr_extra_state_attributes = attrs
         self.async_write_ha_state()
+
 
 class HyperHDRDiagnosticSensor(SensorEntity):
     _attr_has_entity_name = True

@@ -163,9 +163,9 @@ Shows the currently active (visible) priority with detailed attributes: Color, O
 
 Displays the average RGB color as a hex value with RGB array attributes. Data sources (in priority order):
 
-1. Visible priority COLOR component — falls back to the color of the currently visible priority.
-2. Server-side `calculate-colors` — uses the HyperHDR v20+ server API when available.
-3. LED gradient stream — real-time data from the LED Gradient camera (throttled to 2-second intervals).
+1. LED gradient stream — real-time data from the LED Gradient camera when that entity is enabled and streaming (throttled to 2-second intervals).
+2. Server-side `current-state` / `average-color` — HyperHDR JSON-RPC (requires `hyperhdr-py-sickkick` ≥ 0.2.2).
+3. Visible priority COLOR component — falls back to the color of the currently visible priority.
 
 ### Number
 

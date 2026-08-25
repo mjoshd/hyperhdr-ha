@@ -22,7 +22,7 @@ HyperHDR is an open source bias lighting implementation which runs on many platf
 
 - **LED Colors Camera**: Live WebSocket stream of the HyperHDR imagestream output — ideal for PicCap instances or visualizing exact LED output.
 - **LED Gradient Camera**: Real-time per-LED gradient visualization rendered as a JPEG image from raw RGB data.
-- **Average Color Sensor**: Real-time average color display with hex value and RGB attributes (computed from LED stream data with throttled updates).
+- **Average Color Sensor**: Average RGB as hex with attributes, from `current-state`/`average-color` RPC (with LED stream and priority-color fallbacks).
 - **HDR Tone Mapping**: Adjust HDR tone mapping intensity with a dedicated number entity. Supports both legacy `hdrToneMappingMode` and the newer `videomodehdr` command paths.
 - **Smoothing Controls** *(conditional)*: Number entities for time, decay, and update frequency — only created when the connected HyperHDR server exposes smoothing data.
 - **Smoothing Type Selection** *(conditional)*: Choose from multiple smoothing interpolation algorithms — only created when smoothing data is available.
@@ -73,7 +73,9 @@ If your HyperHDR instance has **Local API Authentication** enabled, the LED came
 - **During initial setup** — enter it in the optional "Admin Password" field on the connection form.
 - **After setup** — go to the integration's **Options** (gear icon) and add or change the admin password there.
 
-When configured, the LED Colors and LED Gradient camera streams authenticate using the admin password over the WebSocket connection. If a token is also configured, the admin password takes priority for stream authentication (tokens do not grant the admin privileges required by `imagestream-start`). If your HyperHDR instance does not require authentication, you can leave this field blank.
+When configured, the LED Colors and LED Gradient camera streams authenticate using the admin password over the WebSocket connection. If a token is also configured, the admin password takes priority for stream authentication (tokens do not grant the admin privileges required by `imagestream-start`). HyperHDR requires passwords to be **at least 8 characters** (the default after `hyperhdr --resetPassword` is `hyperhdr`). Leave the field blank to clear a stored password when Local API Authentication is not used.
+
+LED camera WebSockets start only when the camera is viewed (lazy-start), so disabled/unused cameras do not open stream connections.
 
 ### Options Flow
 
