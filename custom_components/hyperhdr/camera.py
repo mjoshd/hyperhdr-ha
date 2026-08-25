@@ -6,6 +6,7 @@ import asyncio
 import functools
 import logging
 import time
+from typing import Any
 
 from aiohttp import web
 from hyperhdr.stream import (
@@ -35,7 +36,6 @@ from . import (
 )
 from .const import (
     CONF_ADMIN_PASSWORD,
-    CONF_INSTANCE_CLIENTS,
     CONF_PORT_WS,
     DOMAIN,
     HYPERHDR_MANUFACTURER_NAME,
@@ -55,12 +55,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up a HyperHDR platform from config entry."""
-    entry_data = hass.data[DOMAIN][config_entry.entry_id]
     server_id = config_entry.unique_id
     host = config_entry.data[CONF_HOST]
     port_ws = config_entry.data.get(CONF_PORT_WS, 8090)
     token = config_entry.data.get(CONF_TOKEN)
-    admin_password = config_entry.data.get(CONF_ADMIN_PASSWORD)
+    admin_password = config_entry.data.get(CONF_ADMIN_PASSWORD) or None
 
     def led_camera_unique_id(instance_num: int) -> str:
         """Return the led camera unique_id."""
@@ -75,7 +74,9 @@ async def async_setup_entry(
         )
 
     @callback
-    def instance_add(instance_num: int, instance_name: str, sysinfo: dict[str, Any]) -> None:
+    def instance_add(
+        instance_num: int, instance_name: str, sysinfo: dict[str, Any]
+    ) -> None:
         """Add entities for a new HyperHDR instance."""
         assert server_id
 
@@ -130,11 +131,89 @@ async def async_setup_entry(
     listen_for_instance_updates(hass, config_entry, instance_add, instance_remove)
 
 
-class HyperHDRLedCamera(Camera):
+class _HyperHDRLedCameraBase(Camera):
+    """Shared lazy-start WebSocket camera behavior."""
+
+    _stream_task_name: str
+
+    def __init__(self) -> None:
+        """Initialize shared camera state."""
+        super().__init__()
+        self._last_image: bytes | None = None
+        self._stream_task: asyncio.Task | None = None
+        self._image_cond = asyncio.Condition()
+
+    async def async_added_to_hass(self) -> None:
+        """Register removal listener; do not open the stream yet."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_ENTITY_REMOVE.format(self._attr_unique_id),
+                functools.partial(self.async_remove, force_remove=True),
+            )
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Stop the background streaming task."""
+        await self._stop_stream()
+        await super().async_will_remove_from_hass()
+
+    async def _stop_stream(self) -> None:
+        """Stop WebSocket stream and background worker."""
+        await self._led_stream.stop()
+        if self._stream_task:
+            self._stream_task.cancel()
+            try:
+                await self._stream_task
+            except asyncio.CancelledError:
+                pass
+            self._stream_task = None
+        if self._attr_is_streaming:
+            self._attr_is_streaming = False
+
+    def _ensure_stream_started(self) -> None:
+        """Start the background stream on first consumer demand."""
+        if self._stream_task and not self._stream_task.done():
+            return
+        self._stream_task = self.hass.async_create_background_task(
+            self._stream_worker(),
+            self._stream_task_name,
+        )
+
+    async def _wait_for_image(self) -> bytes | None:
+        """Wait for new image."""
+        self._ensure_stream_started()
+        async with self._image_cond:
+            await self._image_cond.wait()
+            return self._last_image
+
+    async def async_camera_image(
+        self, width: int | None = None, height: int | None = None
+    ) -> bytes | None:
+        """Return the latest image, starting the stream if needed."""
+        self._ensure_stream_started()
+        return self._last_image
+
+    async def handle_async_mjpeg_stream(
+        self, request: web.Request
+    ) -> web.StreamResponse | None:
+        """Serve an HTTP MJPEG stream from the camera."""
+        self._ensure_stream_started()
+        return await async_get_still_stream(
+            request,
+            self._wait_for_image,
+            DEFAULT_CONTENT_TYPE,
+            0.0,
+        )
+
+
+class HyperHDRLedCamera(_HyperHDRLedCameraBase):
     """Camera entity for HyperHDR LED Colors stream.
 
     Uses HyperHDRLedColorsStream from hyperhdr.stream for WebSocket streaming
     with automatic reconnection and token/admin-password authentication.
+    Stream starts lazily on first image/MJPEG request.
     """
 
     _attr_has_entity_name = True
@@ -158,48 +237,19 @@ class HyperHDRLedCamera(Camera):
             server_id, instance_num, TYPE_HYPERHDR_LED_CAMERA
         )
         self._device_id = get_hyperhdr_device_id(server_id, instance_num)
+        self._stream_task_name = f"hyperhdr_led_stream_{self._device_id}"
         self._led_stream = HyperHDRLedColorsStream(
             host,
             port,
             token=token,
             admin_password=admin_password,
         )
-        self._last_image: bytes | None = None
-        self._stream_task: asyncio.Task | None = None
-        self._image_cond = asyncio.Condition()
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},
             manufacturer=HYPERHDR_MANUFACTURER_NAME,
             model=HYPERHDR_MODEL_NAME,
             name=instance_name,
         )
-
-    async def async_added_to_hass(self) -> None:
-        """Start the background streaming task."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                SIGNAL_ENTITY_REMOVE.format(self._attr_unique_id),
-                functools.partial(self.async_remove, force_remove=True),
-            )
-        )
-        self._stream_task = self.hass.async_create_background_task(
-            self._stream_worker(),
-            f"hyperhdr_led_stream_{self._device_id}",
-        )
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Stop the background streaming task."""
-        await self._led_stream.stop()
-        if self._stream_task:
-            self._stream_task.cancel()
-            try:
-                await self._stream_task
-            except asyncio.CancelledError:
-                pass
-            self._stream_task = None
-        await super().async_will_remove_from_hass()
 
     async def _stream_worker(self) -> None:
         """Background task to receive stream frames and update the camera image."""
@@ -212,36 +262,14 @@ class HyperHDRLedCamera(Camera):
                     self._last_image = frame.image
                     self._image_cond.notify_all()
 
-    async def _wait_for_image(self) -> bytes | None:
-        """Wait for new image."""
-        async with self._image_cond:
-            await self._image_cond.wait()
-            return self._last_image
 
-    async def async_camera_image(
-        self, width: int | None = None, height: int | None = None
-    ) -> bytes | None:
-        """Return the latest image."""
-        return self._last_image
-
-    async def handle_async_mjpeg_stream(
-        self, request: web.Request
-    ) -> web.StreamResponse | None:
-        """Serve an HTTP MJPEG stream from the camera."""
-        return await async_get_still_stream(
-            request,
-            self._wait_for_image,
-            DEFAULT_CONTENT_TYPE,
-            0.0,
-        )
-
-
-class HyperHDRLedGradientCamera(Camera):
+class HyperHDRLedGradientCamera(_HyperHDRLedCameraBase):
     """Camera entity for HyperHDR LED Gradient stream.
 
     Uses HyperHDRLedGradientStream from hyperhdr.stream for WebSocket streaming
     with automatic reconnection, token/admin-password authentication, and
-    built-in RGB-to-JPEG conversion via Pillow.
+    built-in RGB-to-JPEG conversion via Pillow. Stream starts lazily on first
+    image/MJPEG request.
     """
 
     _attr_has_entity_name = True
@@ -265,6 +293,7 @@ class HyperHDRLedGradientCamera(Camera):
             server_id, instance_num, TYPE_HYPERHDR_LED_GRADIENT_CAMERA
         )
         self._device_id = get_hyperhdr_device_id(server_id, instance_num)
+        self._stream_task_name = f"hyperhdr_led_gradient_stream_{self._device_id}"
         self._led_stream = HyperHDRLedGradientStream(
             host,
             port,
@@ -273,42 +302,12 @@ class HyperHDRLedGradientCamera(Camera):
             convert_to_jpeg=True,
             jpeg_height=20,
         )
-        self._last_image: bytes | None = None
-        self._stream_task: asyncio.Task | None = None
-        self._image_cond = asyncio.Condition()
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},
             manufacturer=HYPERHDR_MANUFACTURER_NAME,
             model=HYPERHDR_MODEL_NAME,
             name=instance_name,
         )
-
-    async def async_added_to_hass(self) -> None:
-        """Start the background streaming task."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                SIGNAL_ENTITY_REMOVE.format(self._attr_unique_id),
-                functools.partial(self.async_remove, force_remove=True),
-            )
-        )
-        self._stream_task = self.hass.async_create_background_task(
-            self._stream_worker(),
-            f"hyperhdr_led_gradient_stream_{self._device_id}",
-        )
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Stop the background streaming task."""
-        await self._led_stream.stop()
-        if self._stream_task:
-            self._stream_task.cancel()
-            try:
-                await self._stream_task
-            except asyncio.CancelledError:
-                pass
-            self._stream_task = None
-        await super().async_will_remove_from_hass()
 
     async def _stream_worker(self) -> None:
         """Background task to receive stream frames and update the camera image."""
@@ -353,29 +352,6 @@ class HyperHDRLedGradientCamera(Camera):
                     avg_rgb,
                 )
                 _last_avg_dispatch = now
-
-    async def _wait_for_image(self) -> bytes | None:
-        """Wait for new image."""
-        async with self._image_cond:
-            await self._image_cond.wait()
-            return self._last_image
-
-    async def async_camera_image(
-        self, width: int | None = None, height: int | None = None
-    ) -> bytes | None:
-        """Return the latest image."""
-        return self._last_image
-
-    async def handle_async_mjpeg_stream(
-        self, request: web.Request
-    ) -> web.StreamResponse | None:
-        """Serve an HTTP MJPEG stream from the camera."""
-        return await async_get_still_stream(
-            request,
-            self._wait_for_image,
-            DEFAULT_CONTENT_TYPE,
-            0.0,
-        )
 
 
 CAMERA_TYPES = {

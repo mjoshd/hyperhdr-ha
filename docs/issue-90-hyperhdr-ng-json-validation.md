@@ -35,23 +35,21 @@ Often appears immediately after sensor/light setup and a successful `Connected t
 
 Integration entities otherwise load; the failure is noisy but non-fatal (sensor falls back to priority/stream sources).
 
-## Fix (integration)
+## Fix (integration) — superseded by #110
 
 **File:** `custom_components/hyperhdr/sensor.py`
 
-| Before | After |
-|--------|--------|
-| Always tried `async_get_average_color()` (`calculate-colors`) | Prefer `async_get_current_colors()` (`ledcolors` + `currentColors`) |
-| — | Average RGB derived from `info.rgb`, `info.colors`, or `info.avgColor` |
-| — | `async_get_average_color()` only if the client has **no** `async_get_current_colors` (legacy library) |
+| Before | After (#94, incomplete) | Correct (#110) |
+|--------|-------------------------|----------------|
+| Always tried `async_get_average_color()` (`calculate-colors`) | Prefer `async_get_current_colors()` (`ledcolors` + `currentColors`) | Prefer `async_get_average_color()` → `current-state` / `average-color` |
 
-Helper: `_try_average_rgb_from_ledcolors_response()`.
+`currentColors` is **not** a valid `ledcolors` subcommand. See [docs/issue-110-ledcolors-validation-stream-auth.md](issue-110-ledcolors-validation-stream-auth.md).
 
 ## Verification
 
-1. Deploy updated `sensor.py` (or a release that includes this change).
+1. Deploy updated `sensor.py` (or a release that includes the #110 change) and `hyperhdr-py-sickkick>=0.2.2`.
 2. Reload the HyperHDR config entry (or restart Home Assistant).
-3. Confirm HyperHDR log **no longer** shows `Unknown enum value` at startup from `192.168.1.104` (HA host).
+3. Confirm HyperHDR log **no longer** shows `Unknown enum value` or `specific message validation` for `ledcolors`/`currentColors`/`calculate-colors`.
 4. Optional HA debug:
 
    ```yaml
@@ -60,12 +58,12 @@ Helper: `_try_average_rgb_from_ledcolors_response()`.
        hyperhdr.client: debug
    ```
 
-   Confirm `Send to server` lines use `ledcolors` / `currentColors`, not `calculate-colors`.
+   Confirm `Send to server` lines use `current-state` / `average-color`, not `calculate-colors` or `currentColors`.
 
 ## Related
 
-- Dependency: `hyperhdr-py-sickkick==0.2.0` still defines `KEY_AVERAGE_COLOR = "calculate-colors"`; integration avoids calling it on current library builds.
-- Longer term: align `hyperhdr-py-sickkick` with HyperHDR.ng command names or add a native `current-state` / instance average-color wrapper upstream.
+- Dependency: `hyperhdr-py-sickkick>=0.2.2` implements `current-state` / `average-color`.
+- Follow-up: [#110](https://github.com/Shaffer-Softworks/hyperhdr-ha/issues/110) corrected the #94 interim approach.
 
 ## Investigation notes (2026-04-21)
 

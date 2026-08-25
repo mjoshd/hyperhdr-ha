@@ -243,14 +243,23 @@ class HyperHDRConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle a flow initiated by the user."""
         errors = {}
         if user_input:
-            self._data.update(user_input)
+            admin_password = (user_input.get(CONF_ADMIN_PASSWORD) or "").strip()
+            if admin_password and len(admin_password) < 8:
+                errors[CONF_ADMIN_PASSWORD] = "admin_password_too_short"
+            else:
+                cleaned = dict(user_input)
+                if admin_password:
+                    cleaned[CONF_ADMIN_PASSWORD] = admin_password
+                else:
+                    cleaned.pop(CONF_ADMIN_PASSWORD, None)
+                self._data.update(cleaned)
 
-            async with self._create_client(raw_connection=True) as hyperhdr_client:
-                if hyperhdr_client:
-                    return await self._advance_to_auth_step_if_necessary(
-                        hyperhdr_client
-                    )
-                errors[CONF_BASE] = "cannot_connect"
+                async with self._create_client(raw_connection=True) as hyperhdr_client:
+                    if hyperhdr_client:
+                        return await self._advance_to_auth_step_if_necessary(
+                            hyperhdr_client
+                        )
+                    errors[CONF_BASE] = "cannot_connect"
 
         return self.async_show_form(
             step_id="user",
@@ -485,29 +494,37 @@ class HyperHDROptionsFlow(OptionsFlow):
             new_data[CONF_PORT] = ui.pop(CONF_PORT)
             admin_password = ui.pop(CONF_ADMIN_PASSWORD, None)
             if admin_password is not None:
-                new_data[CONF_ADMIN_PASSWORD] = admin_password
+                admin_password = admin_password.strip()
+                if admin_password and len(admin_password) < 8:
+                    errors[CONF_ADMIN_PASSWORD] = "admin_password_too_short"
+                elif admin_password:
+                    new_data[CONF_ADMIN_PASSWORD] = admin_password
+                else:
+                    # Empty field clears a previously stored password.
+                    new_data.pop(CONF_ADMIN_PASSWORD, None)
             port_ws = ui.pop(CONF_PORT_WS, None)
             if port_ws is not None:
                 new_data[CONF_PORT_WS] = port_ws
 
             effects_submit: dict[str, str] = {}
-            async with create_hyperhdr_client(
-                new_data[CONF_HOST],
-                new_data[CONF_PORT],
-                token=new_data.get(CONF_TOKEN),
-                raw_connection=True,
-            ) as hyperhdr_client:
-                if not hyperhdr_client:
-                    errors[CONF_BASE] = "cannot_connect"
-                else:
-                    hyperhdr_id = await hyperhdr_client.async_sysinfo_id()
-                    unique_id = self._config_entry.unique_id
-                    if not hyperhdr_id:
-                        errors[CONF_BASE] = "no_id"
-                    elif unique_id and hyperhdr_id != unique_id:
-                        errors[CONF_BASE] = "wrong_device"
+            if not errors:
+                async with create_hyperhdr_client(
+                    new_data[CONF_HOST],
+                    new_data[CONF_PORT],
+                    token=new_data.get(CONF_TOKEN),
+                    raw_connection=True,
+                ) as hyperhdr_client:
+                    if not hyperhdr_client:
+                        errors[CONF_BASE] = "cannot_connect"
                     else:
-                        effects_submit = self._effects_map(hyperhdr_client)
+                        hyperhdr_id = await hyperhdr_client.async_sysinfo_id()
+                        unique_id = self._config_entry.unique_id
+                        if not hyperhdr_id:
+                            errors[CONF_BASE] = "no_id"
+                        elif unique_id and hyperhdr_id != unique_id:
+                            errors[CONF_BASE] = "wrong_device"
+                        else:
+                            effects_submit = self._effects_map(hyperhdr_client)
 
             if not errors:
                 effect_show_list = ui.pop(CONF_EFFECT_SHOW_LIST)
